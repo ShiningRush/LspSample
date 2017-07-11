@@ -45,7 +45,7 @@ void FreeProvider(LPWSAPROTOCOL_INFOW pProtoInfo)
 
 BOOL InstallProvider(WCHAR *pwszPathName)
 {
-	WCHAR wszLSPName[] = L"PhoenixLSP";
+	WCHAR wszLSPName[] = L"YibanLSP";
 	LPWSAPROTOCOL_INFOW pProtoInfo;
 	int nProtocols;
 	WSAPROTOCOL_INFOW OriginalProtocolInfo[3];

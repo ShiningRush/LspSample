@@ -238,14 +238,18 @@ void main(int argc, char *argv[])
 			TCHAR szPathName[256];
 			TCHAR* p;
 
-			if (::GetFullPathName(L"MyFirstLSP.dll", 256, szPathName, &p) != 0)
+			if (::GetModuleFileName(NULL, szPathName, 256) != 0)
 			{
+				_tcsrchr(szPathName, '\\')[0] = 0;
+				_tcscat(szPathName, L"\\TrafficCaptrueLSP.dll");
+				printf(" LspDll FilePath :%S \n", szPathName);
 				if (InstallProvider(szPathName))
 				{
 					printf(" Install successully. \n");
 					return;
 				}
 			}
+
 			printf(" Install failed. \n");
 			return;
 		}

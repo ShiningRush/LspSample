@@ -21,6 +21,8 @@
 WSPUPCALLTABLE g_pUpCallTable;		// 上层函数列表。如果LSP创建了自己的伪句柄，才使用这个函数列表
 WSPPROC_TABLE g_NextProcTable;		// 下层函数列表
 extern TCHAR	g_szCurrentApp[MAX_PATH];	// 当前调用本DLL的程序的名称
+TCHAR *hspsRegPath = NULL;
+bool isInit = false;
 
 
 LPWSAPROTOCOL_INFOW GetProvider(LPINT lpnTotalProtocols)
@@ -47,13 +49,12 @@ void FreeProvider(LPWSAPROTOCOL_INFOW pProtoInfo)
 }
 
 
-bool IsConfigApp(TCHAR *hspsRegPath)
+bool IsConfigApp()
 {
 	// 判断配置文件中的路径是否为执行进程的路径
 	bool result = false;
 	TCHAR configFilePath[256], *p;
 	::GetFullPathName(_tcscat(hspsRegPath, L"\\Config\\lspPassApp.config") , 256, configFilePath, &p);
-	ODS(configFilePath);
 	std::ifstream fin(configFilePath);
 	if (!fin) {
 		ODS(L"AppConfigFile open error!\n");
@@ -82,40 +83,80 @@ bool IsConfigApp(TCHAR *hspsRegPath)
 
 bool IsHSPSApp()
 {
-	HKEY newKey;
-	DWORD lpDataType, lpDataLength;
-	BYTE lpHspsRegPathData[256];
-	LSTATUS lresult = RegOpenKeyEx(
-		HKEY_LOCAL_MACHINE,
-		CONFIGURATION_KEY,
-		0,
-		KEY_ALL_ACCESS,
-		&newKey);
-	if (ERROR_SUCCESS == lresult) {
-		lresult = RegQueryValueEx(
-			newKey,
-			L"InstallPath",
+	if (!isInit)
+	{
+		HKEY newKey;
+		DWORD lpDataType, lpDataLength;
+		BYTE lpHspsRegPathData[256];
+		LSTATUS lresult = RegOpenKeyEx(
+			HKEY_LOCAL_MACHINE,
+			CONFIGURATION_KEY,
 			0,
-			&lpDataType,
-			lpHspsRegPathData,
-			&lpDataLength);
+			KEY_ALL_ACCESS,
+			&newKey);
+		if (ERROR_SUCCESS == lresult) {
+			lresult = RegQueryValueEx(
+				newKey,
+				L"InstallPath",
+				0,
+				&lpDataType,
+				lpHspsRegPathData,
+				&lpDataLength);
 
-		if (ERROR_SUCCESS == lresult)
-		{
-			TCHAR *result = _tcsstr(g_szCurrentApp, (TCHAR*)lpHspsRegPathData);
-			if (result != NULL)
+			if (ERROR_SUCCESS == lresult)
 			{
-				return true;
-			}
-
-			if (IsConfigApp((TCHAR*)lpHspsRegPathData))
-			{
-				return true;
+				hspsRegPath = (TCHAR*)lpHspsRegPathData;
+				isInit = true;
 			}
 		}
 	}
 
+	if (hspsRegPath != NULL)
+	{
+		TCHAR *result = _tcsstr(g_szCurrentApp, hspsRegPath);
+		if (result != NULL)
+		{
+			return true;
+		}
+
+
+		if (IsConfigApp())
+		{
+			return true;
+		}
+	}
+
 	return false;
+}
+
+bool IsInNicConfigFile(char* checkingNicName)
+{
+	// 判断配置文件中的网卡名称
+	bool result = false;
+	TCHAR configFilePath[256], *p;
+	::GetFullPathName(_tcscat(hspsRegPath, L"\\Config\\networkInterfaceCard.config"), 256, configFilePath, &p);
+	std::ifstream fin(configFilePath);
+	if (!fin) {
+		ODS(L"NicConfigFile open error!\n");
+	}
+	else
+	{
+		char nicName[256];
+		while (!fin.eof())            //判断文件是否读结束
+		{
+			fin.getline(nicName, 256);
+			if (strstr(nicName, checkingNicName))
+			{
+				result = true;
+				break;
+			}
+		}
+
+	}
+
+	fin.close();
+
+	return result;
 }
 
 bool Is4GNetworkInterfaceCard(DWORD checkIp)
@@ -134,12 +175,11 @@ bool Is4GNetworkInterfaceCard(DWORD checkIp)
 		while (pAdapterInfo != NULL)
 		{
 
-			if (strstr("ZTE Wireless Ethernet Adapter", pAdapterInfo->Description))
+			if (pAdapterInfo ->Type == MIB_IF_TYPE_PPP )
 			{
 				hspsNICAddr = ::inet_addr(pAdapterInfo->IpAddressList.IpAddress.String);
 				break;
 			}
-
 
 			pAdapterInfo = pAdapterInfo->Next;
 		}
@@ -288,7 +328,7 @@ overlapped operation was initiated and no completion indication will occur.
 	//g_NextProcTable.lpWSPShutdown(s, SD_BOTH, &iError);
 	//*lpErrno = WSAECONNABORTED;
 
-	ODS(L" intercepted a send ! ");
+	ODS1(L" query send ... %s", g_szCurrentApp);
 	if (!IsCanConnectNetwork(s))
 	{
 		int	iError;

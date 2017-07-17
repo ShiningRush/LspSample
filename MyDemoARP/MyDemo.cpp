@@ -103,7 +103,7 @@ void GetAdapterInfos()
 			g_dwLocalIP = ::inet_addr(pAdapterInfo->IpAddressList.IpAddress.String);
 			g_dwMask = ::inet_addr(pAdapterInfo->IpAddressList.IpMask.String);
 
-			if (strstr("ZTE Wireless Ethernet Adapter", pAdapterInfo->Description))
+			if (strstr(pAdapterInfo->Description, "ZTE Wireless Ethernet Adapter #2"))
 			{
 				printf(" \n -------------------- 本地主机信息 -----------------------\n\n");
 				in_addr in;
@@ -130,7 +130,7 @@ void GetAdapterInfos()
 
 int main()
 {
-	GetRegValue();
+	GetAdapterInfos();
 
 	scanf_s("%d");
     return 0;

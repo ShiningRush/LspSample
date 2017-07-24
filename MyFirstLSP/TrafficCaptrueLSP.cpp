@@ -21,6 +21,7 @@
 WSPUPCALLTABLE g_pUpCallTable;		// 上层函数列表。如果LSP创建了自己的伪句柄，才使用这个函数列表
 WSPPROC_TABLE g_NextProcTable;		// 下层函数列表
 extern TCHAR	g_szCurrentApp[MAX_PATH];	// 当前调用本DLL的程序的名称
+extern HMODULE g_hModule; // 本DLL的模块句柄
 TCHAR *hspsRegPath = NULL;
 bool isInit = false;
 
@@ -53,30 +54,35 @@ bool IsConfigApp()
 {
 	// 判断配置文件中的路径是否为执行进程的路径
 	bool result = false;
-	TCHAR configFilePath[256], *p;
-	::GetFullPathName(_tcscat(hspsRegPath, L"\\Config\\lspPassApp.config") , 256, configFilePath, &p);
-	std::ifstream fin(configFilePath);
-	if (!fin) {
-		ODS(L"AppConfigFile open error!\n");
-	}
-	else
+	TCHAR configFilePath[256];
+
+	if (::GetModuleFileName(g_hModule, configFilePath, 256) != 0)
 	{
-		char authorizedAppPath[256];
-		while (!fin.eof())            //判断文件是否读结束
+		_tcsrchr(configFilePath, '\\')[0] = 0;
+		_tcscat(configFilePath, L"\\lspPassApp.config");
+
+		std::ifstream fin(configFilePath);
+		if (!fin) {
+			ODS(L"AppConfigFile open error!\n");
+		}
+		else
 		{
-			fin.getline(authorizedAppPath, 256);
-			wchar_t wcsStr[256];
-			swprintf(wcsStr, L"%S", authorizedAppPath);
-			if (_tcsstr(g_szCurrentApp, wcsStr))
+			char authorizedAppPath[256];
+			while (!fin.eof())            //判断文件是否读结束
 			{
-				result = true;
-				break;
+				fin.getline(authorizedAppPath, 256);
+				wchar_t wcsStr[256];
+				swprintf(wcsStr, L"%S", authorizedAppPath);
+				if (_tcslen(wcsStr) > 0 && _tcsstr(g_szCurrentApp, wcsStr))
+				{
+					result = true;
+					break;
+				}
 			}
 		}
 
+		fin.close();
 	}
-
-	fin.close();
 
 	return result;
 }
@@ -111,19 +117,20 @@ bool IsHSPSApp()
 		}
 	}
 
-	if (hspsRegPath != NULL)
+	if (hspsRegPath != NULL && _tcsclen(hspsRegPath) > 0)
 	{
 		TCHAR *result = _tcsstr(g_szCurrentApp, hspsRegPath);
 		if (result != NULL)
 		{
+			//ODS(L"请求来自全院安装路径，已通过");
 			return true;
 		}
+	}
 
-
-		if (IsConfigApp())
-		{
-			return true;
-		}
+	if (IsConfigApp())
+	{
+		//ODS(L"请求来自配置文件，已通过");
+		return true;
 	}
 
 	return false;
@@ -208,15 +215,15 @@ void PrintSocketInfo(SOCKET s)
 
 bool IsCanConnectNetwork(SOCKET s)
 {
-	ODS(L"开始检查socket绑定ip");
+	//ODS(L"开始检查socket绑定ip");
 	struct sockaddr_in sa;
 	int len = sizeof(sa);
 	if (!getsockname(s, (struct sockaddr *)&sa, &len))
 	{
-		ODS(L"获取到socket绑定ip ，开始检查是否4G网卡");
+		//ODS(L"获取到socket绑定ip ，开始检查是否4G网卡");
 		if (Is4GNetworkInterfaceCard(sa.sin_addr.S_un.S_addr))
 		{
-			ODS(L"来自4G网卡，开始检查是否允许访问网络");
+			//ODS(L"来自4G网卡，开始检查是否允许访问网络");
 			return IsHSPSApp();
 		}
 	}
@@ -255,13 +262,14 @@ int WSPAPI WSPSendTo(
 
 	if (!IsCanConnectNetwork(s))
 	{
+		//ODS(L"进程已被禁止访问 by SendTo");
 		int	iError;
 		g_NextProcTable.lpWSPShutdown(s, SD_BOTH, &iError);
 		*lpErrno = WSAECONNABORTED;
 		return SOCKET_ERROR;
 	}
 
-
+	//ODS(L"进程已通过 by SendTo");
 	return g_NextProcTable.lpWSPSendTo(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags, lpTo
 			, iTolen, lpOverlapped, lpCompletionRoutine, lpThreadId, lpErrno);
 
@@ -331,11 +339,14 @@ overlapped operation was initiated and no completion indication will occur.
 	ODS1(L" query send ... %s", g_szCurrentApp);
 	if (!IsCanConnectNetwork(s))
 	{
+		//ODS(L"进程已被禁止访问 by Send");
 		int	iError;
 		g_NextProcTable.lpWSPShutdown(s, SD_BOTH, &iError);
 		*lpErrno = WSAECONNABORTED;
 		return SOCKET_ERROR;
 	}
+
+	//ODS(L"进程已通过 by Send");
 
 	return g_NextProcTable.lpWSPSend(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags, lpOverlapped
 		, lpCompletionRoutine, lpThreadId, lpErrno);
@@ -392,12 +403,55 @@ returns SOCKET_ERROR, and a specific erro rcode is available in lpErrno.
 {
 	if (!IsCanConnectNetwork(s))
 	{
+		//ODS(L"进程已被禁止访问 by Connect");
 		return SOCKET_ERROR;
 	}
 
+	//ODS(L"进程已通过 by Connect");
 	return g_NextProcTable.lpWSPConnect(s, name, namelen, lpCallerData, lpCalleeData, lpSQOS
 		, lpGQOS, lpErrno);
 
+}
+
+SOCKET
+WSPAPI
+WSPSocket(
+	IN int af,
+	IN int type,
+	IN int protocol,
+	IN LPWSAPROTOCOL_INFOW lpProtocolInfo,
+	IN GROUP g,
+	IN DWORD dwFlags,
+	OUT INT FAR *lpErrno
+)
+/*++
+Routine Description:
+
+Initialize  internal  data  and  prepare sockets for usage.  Must be called
+before any other socket routine.
+
+Arguments:
+
+lpProtocolInfo - Supplies  a pointer to a WSAPROTOCOL_INFOW struct that
+defines  the characteristics of the socket to be created.
+
+g              - Supplies  the identifier of the socket group which the new
+socket is to join.
+
+dwFlags        - Supplies the socket attribute specification.
+
+lpErrno        - Returns the error code
+
+Return Value:
+
+If no error occurs, WSPSocket returns a descriptor referencing the new socket.
+Otherwise, a value of INVALID_SOCKET is returned, and a specific error code is available
+in lpErrno.
+
+--*/
+{
+
+	return INVALID_SOCKET;
 }
 
 int WSPAPI WSPStartup(
@@ -490,6 +544,7 @@ int WSPAPI WSPStartup(
 	lpProcTable->lpWSPSendTo = WSPSendTo;
 	lpProcTable->lpWSPSend = WSPSend;
 	lpProcTable->lpWSPConnect = WSPConnect;
+	lpProcTable->lpWSPSocket = WSPSocket;
 
 	FreeProvider(pProtoInfo);
 	return nRet;

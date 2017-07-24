@@ -236,7 +236,6 @@ void main(int argc, char *argv[])
 		if (strcmp(argv[1], "-install") == 0)
 		{
 			TCHAR szPathName[256];
-			TCHAR* p;
 
 			if (::GetModuleFileName(NULL, szPathName, 256) != 0)
 			{
